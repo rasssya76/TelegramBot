@@ -1,0 +1,230 @@
+process.on("uncaughtException", console.error);
+console.log('Starting...')
+require("./config");
+const PORT = process.env.PORT || 3000
+const { connect } = require("./server.js")
+const { Telegraf, Markup } = require("telegraf");
+const fs = require("fs");
+const path = require("path");
+const chalk = require("chalk");
+const syntaxerror = require("syntax-error");
+const { format } = require("util");
+const chokidar = require("chokidar");
+const cfonts = require("cfonts")
+const database = new (require("./lib/localdb"))();
+const { Collection, watchPlugins } = require("./lib/plugins.js");
+const tele = require('./lib/tele')
+const bot = new Telegraf(global.token);
+const { say } = cfonts
+global.axios = require("axios");
+global.cheerio = require("cheerio");
+global.fetch = require("node-fetch");
+global.cfonts = cfonts;
+global.tele = tele;
+global.chalk = chalk;
+//global.config = config;
+global.API = (name, path = "/", query = {}, apikeyqueryname) =>
+  (name in global.APIs ? global.APIs[name] : name) +
+  path +
+  (query || apikeyqueryname
+    ? "?" +
+      new URLSearchParams(
+        Object.entries({
+          ...query,
+          ...(apikeyqueryname
+            ? {
+                [apikeyqueryname]:
+                  global.APIKeys[
+                    name in global.APIs ? global.APIs[name] : name
+                  ],
+              }
+            : {}),
+        }),
+      )
+    : "");
+global.Func = new (require("./lib/function"))();
+global.plugins = new Collection();
+connect(bot, PORT)
+database.connect().catch(() => database.connect());
+say('R-BOT', { font: 'chrome', align: 'center', gradient: ['red', 'magenta'] })
+say(`Happy Surfing`, { font: 'console', align: 'center', gradient: ['red', 'magenta'] })
+setInterval(async () => {
+  fs.writeFileSync(
+    `system/temp/database.json`,
+    JSON.stringify(global.db, null, 3),
+  );
+}, 3 * 1000);
+console.log(chalk.yellowBright(" CHECK THE PLUGINS FOR ANY PROBLEMS "))
+const pluginsFolder = "plugins";
+const dir = fs.readdirSync(pluginsFolder).filter((a) => a !== "_function");
+for (const pluginFolder of dir) {
+  const pluginPath = `${pluginsFolder}/${pluginFolder}`;
+
+  if (fs.statSync(pluginPath).isDirectory()) {
+    const files = fs
+      .readdirSync(pluginPath)
+      .filter((file) => file.endsWith(".js"));
+
+    for (const file of files) {
+      try {
+        const fullPath = `${pluginPath}/${file}`;
+        const module = require(`../${fullPath}`);
+        if (!module.tags) return;
+        plugins.set(fullPath, module);        
+        console.log(chalk.bgBlueBright(`Plugin loaded: ${fullPath}`));        
+      } catch (e) {
+        console.error(`Error loading plugin: ${e.message}`);
+      }
+    }
+  }
+}
+console.log(chalk.greenBright(" BOT READY TO USE "))
+bot.command("start", (ctx) => {
+  user = tele.getUser(ctx.message.from)
+    //await help.start(ctx, user.full_name)
+    var user_id = ctx.message.from.id + " "
+    var name = user.full_name
+    var texct = `Hello ${name}! I am R-BOT, BOT ready to help you with your work. Please type /help to see the list of commands`
+    ctx.replyWithPhoto({
+                    url: `https://telegra.ph/file/5473824536137dc971e8c.jpg`
+                }, {
+                    caption: texct,
+                    parse_mode: 'MARKDOWN',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{
+                                    text: 'Channell',
+                                    url: "https://t.me/siarannnnnn"
+                                },
+                                {
+                                    text: 'Grup Chat',
+                                    url: "https://t.me/chatpubb"
+                                }
+                            ]
+                        ]
+                    }
+                })    
+     ctx.deleteMessage()
+});
+
+bot.on("message", (msg) => {
+  const body = msg.message.text || msg.message.caption || "";
+  const prefix = /^[°•π÷×¶∆£¢€¥®™+✓_|~!?@#%^&.©^/]/gi.test(body)
+    ? body.match(/^[°•π÷×¶∆£¢€¥®™+✓_|~!?@#%^&.©^/]/gi)[0]
+    : "";
+  const cmd =
+    body && body.slice(prefix.length).trim().split(/ +/).shift().toLowerCase();
+  const plugin =
+    plugins.get(cmd) ||
+    plugins.find((v) => v.command && v.command.includes(cmd));
+
+  const args =
+    body
+      .trim()
+      .replace(new RegExp(prefix, "i"), "")
+      .replace(cmd, "")
+      .split(/ +/)
+      .filter((a) => a) || [];
+  const text = args.join(" ");
+  const isOwner = global.owner.includes(msg.message.from.username);
+  const isGroup = msg.message.chat.type.includes("group");
+  global.prefix = prefix
+  msg.args = args;
+  msg.text = text;
+  msg.sender = msg.message.from.id;
+  msg.isOwner = isOwner;
+  msg.isGroup = isGroup;
+  msg.chat = msg.message.chat.id;
+  msg.quoted = msg.message.reply_to_message
+    ? msg.message.reply_to_message
+    : msg.message;
+  msg.sendReply = (teks, options = {}) => {
+    return msg.reply(teks, {
+      reply_to_message_id: msg.message.message_id,
+      ...options,
+    });
+  };
+  msg.editMessage = (id, teks, mess) => {
+    return bot.telegram.editMessageText(id, mess.message_id, null, teks);
+  };
+  msg.download = async (quoted) => {
+    const id = await Func.getFileId(quoted);
+    const { href } = await bot.telegram.getFileLink(id);
+    return href;
+  };
+
+  if (body) {
+    require("./lib/database").idb(msg);
+  }
+
+  if (plugin) {
+    if (!prefix && plugin.noPrefix) {
+      if (plugin.owner && !isOwner) {
+        return msg.sendReply(global.msg.owner);
+      }
+      if (plugin.group && !isGroup) {
+        return msg.sendReply(global.msg.group);
+      }
+      if (plugin.use && !text) {
+        return msg.sendReply(
+          plugin.use
+            .replace(/%prefix/gi, prefix)
+            .replace(/%command/gi, cmd)
+            .replace(/%text/gi, text),
+        );
+      }
+
+      plugin.run(bot, {
+        msg,
+        args,
+        text,
+        command: cmd,
+      });
+    }
+    if (!!prefix && body.startsWith(prefix)) {
+      if (plugin.owner && !isOwner) {
+        return msg.reply(global.msg.owner);
+      }
+      if (plugin.group && !isGroup) {
+        return msg.reply(global.msg.group);
+      }
+      if (plugin.use && !text) {
+        return msg.sendReply(
+          plugin.use
+            .replace(/%prefix/gi, prefix)
+            .replace(/%command/gi, cmd)
+            .replace(/%text/gi, text),
+        );
+      }
+
+      plugin.run(bot, {
+        msg,
+        args,
+        text,
+        prefix,
+        command: cmd,
+      });      
+      console.log(chalk.blueBright("command :", cmd));
+    }
+  }
+
+  if (!plugin) {
+    const dir = "plugins/_function";
+    const files = fs.readdirSync(dir).filter((file) => file.endsWith(".js"));
+    if (files.length === 0) return;
+    for (const file of files) {
+      const load = require(`../${dir}/${file}`);
+      load(bot, {
+        msg,
+        args,
+        text,
+        prefix,
+        command: cmd,
+      });
+    }
+  }
+});
+
+bot.launch();
+
+watchPlugins(pluginsFolder);

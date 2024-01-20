@@ -1,0 +1,24 @@
+module.exports = {
+    command: ["ai", "openai", "chatbot", "chat"],
+    tags: ["ai"],
+    help: ["ai", "openai", "chatbot", "chat"],
+    use: "Is there anything I can help you with?",
+    run: async (bot, {
+        msg
+    }) => {
+        try {
+            msg.telegram.sendChatAction(msg.chat.id, 'typing');
+            var data = await Func.fetchJson(
+                "https://hercai.onrender.com/v3/hercai?question=" + msg.text,
+            );
+            console.log(data)
+            msg.sendReply('Please wait. Looking for data').then((sentMessage) => {
+                setTimeout(() => {
+                    msg.telegram.editMessageText(msg.update.message.chat.id, sentMessage.message_id, null, data.reply);
+                }, 1000);
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    },
+};

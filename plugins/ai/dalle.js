@@ -1,0 +1,28 @@
+var { textToImage } = require('../../system/scrape/text2img.js')
+module.exports = {
+  command: ["dalle"],
+  tags: ["ai"],
+  help: ["dalle"],
+  use: "Prompt?",
+  run: async (bot, { msg }) => {
+    try {
+    var data = await textToImage(msg.text)
+    console.log(data)
+    await msg.replyWithPhoto(
+        data,
+        {
+        caption: wm,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Join My Group", url: sgc }],
+          ],
+        },
+        reply_to_message_id: msg.message.message_id,
+      },
+    );             
+    } catch (e) {
+      console.error(e);
+    }
+  },
+};
